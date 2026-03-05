@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QLabel>
+#include "AppConfig.h"
 #include "Utils.h"
 #include "ProcessThread.h"
 
@@ -20,6 +21,8 @@ public:
     explicit OriginVideoWid(QWidget *parent = nullptr);
     ~OriginVideoWid();
 
+    void setVideoCount(const int &cnt);
+
 signals:
     void labelSizeChange(cv::Size size, ProcessThread::VideoType type);
 public slots:
@@ -28,11 +31,16 @@ public slots:
 protected:
     bool eventFilter(QObject *obj, QEvent *event);
 private:
-    Ui::OriginVideoWid *ui;
-    QImage currentImg[MAX_VIDEO_CNT];
-    QLabel *labels[MAX_VIDEO_CNT];
-    int id;
+    void addNewLabels();
 
+
+    Ui::OriginVideoWid *ui;
+    QImage currentImg[AppConfig::MAX_VIDEO_CNT];
+    QVector<QLabel*> labels;
+    int id;
+    int videoCnt;
+
+    void clearOldLabels();
 };
 
 #endif // ORIGINVIDEOWID_H

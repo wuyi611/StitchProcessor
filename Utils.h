@@ -6,8 +6,6 @@
 #include <QObject>
 #include <QMetaEnum>
 
-#define MAX_VIDEO_CNT 10
-#define MAX_QUEUE_SIZE 3
 #define DEBUG_ENABLED true // 建议改名，避免与系统宏冲突
 
 class Utils {

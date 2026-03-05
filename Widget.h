@@ -17,19 +17,12 @@
 #include <QPainter>
 #include <OriginVideoWid.h>
 
+#include "AppConfig.h"
 #include "DecodeThread.h"
 #include "ProcessThread.h"
 #include "Utils.h"
 
-// 资源路径
-
-#if defined(DEBUG) || defined(_DEBUG)
-#define BasePt "/../../../"
-#else
-#define BasePt "/"
-#endif
-
-#define CfgPt       "config.ini"
+using namespace cv;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -46,13 +39,13 @@ public:
     ~Widget();
 
 signals:
-    void labelSizeChange(cv::Size size, ProcessThread::VideoType type);
+    void labelSizeChange(Size size, ProcessThread::VideoType type);
 
 protected:
     void keyPressEvent(QKeyEvent *event) override;
 
 private slots:
-    void newResultMat(cv::Mat mat);
+    void newResultMat(Mat mat);
 
 
 private:
@@ -63,24 +56,29 @@ private:
     int loadMatrix(const QString &filePt);
     int loadOffset(const QString &filePt);
     int uploadOffset(const QString &filePt);
-    void saveOffset(const QVector<cv::Point> &off);
+
+    void dataInit();
+    void saveOffset(const QVector<Point> &off);
+    bool eventFilter(QObject *obj, QEvent *event);
 
     int videoCnt;
+    int currentID;
+
+    QMutex mutex;
+
     QString matrixPt;
     QString offsetPt;
-    QMap<QString, cv::Mat> matrixMap;
-    QQueue<cv::Mat> ImgQueues;
-    QMutex mutex;
-    cv::Size displaySize;
-    int currentID;
-    QVector<cv::Point> offsets;
-    QImage currentImg;
 
-    DecodeThread *decodeThread[MAX_VIDEO_CNT];
-    ProcessThread *processThread;
-    OriginVideoWid *ovw;
+    QVector<QString>        rtspUrl;
+    QVector<Point>      offsets;
+    QMap<QString, Mat>  matrixMap;
+    QQueue<Mat>         ImgQueues;
+    Size                displaySize;
+
+    OriginVideoWid  *ovw;
+    ProcessThread   *processThread;
+    DecodeThread    *decodeThread[AppConfig::MAX_VIDEO_CNT];
 
 
-    bool eventFilter(QObject *obj, QEvent *event);
 };
 #endif // WIDGET_H

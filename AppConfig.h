@@ -1,41 +1,39 @@
-﻿// AppConfig.h
-#ifndef APPCONFIG_H
+﻿#ifndef APPCONFIG_H
 #define APPCONFIG_H
 
-#include <QString>
-#include <QSettings>
-#include <QCoreApplication>
-#include <QMutex>
+#if defined(DEBUG) || defined(_DEBUG)
+#define BasePt "/../../../"
+#else
+#define BasePt "/"
+#endif
 
-class AppConfig {
+#define CfgPt  "config.ini"
+
+class AppConfig
+{
 public:
-    // 获取单例实例
-    static AppConfig& instance() {
-        static AppConfig _instance;
-        return _instance;
+    static AppConfig& getInstance() {
+        static AppConfig instance;
+        return instance;
     }
 
-    // 核心方法：从 ini 加载/刷新数据
-    void load();
-
-    // 核心方法：保存当前变量到 ini
-    void save();
-
-    // 全局变量定义
-    QString videoPath;
-    int threshold;
-    bool isEnableGpu;
-
-private:
-    AppConfig() {
-        // 设置 ini 文件路径为可执行程序所在目录的 config.ini
-        m_iniPath = QCoreApplication::applicationDirPath() + "/config.ini";
-        load(); // 初始化时自动读取一次
-    }
-
-    QString m_iniPath;
     AppConfig(const AppConfig&) = delete;
     AppConfig& operator=(const AppConfig&) = delete;
+
+
+    static constexpr int MAX_VIDEO_CNT = 10;
+    static constexpr int MAX_QUEUE_SIZE = 3;
+
+    int width;
+    int height;
+
+
+private:
+    AppConfig();
+    ~AppConfig() = default;
+
 };
 
-#endif
+
+
+#endif // APPCONFIG_H

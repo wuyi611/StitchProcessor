@@ -3,13 +3,14 @@
 ProcessThread::ProcessThread(QObject *parent) : QThread(parent)
 {
     stopFlag = false;
-    offsets.resize(MAX_VIDEO_CNT);
-    offsets[0] = cv::Point(100, 100);
-    offsets[1] = cv::Point(300, 300);
-    offsets[2] = cv::Point(500, 500);
+    offsets.resize(AppConfig::MAX_VIDEO_CNT);
 
     // 清空总画布
     totalCanvas.setTo(cv::Scalar(0, 0, 0, 0));
+
+    matrixOff[0] = cv::Point(50,100);
+    matrixOff[1] = cv::Point(100,250);
+    matrixOff[2] = cv::Point(600,20);
 }
 
 ProcessThread::~ProcessThread()
@@ -18,35 +19,35 @@ ProcessThread::~ProcessThread()
     wait();
 }
 
-
-
-void ProcessThread::setMatrix(const QMap<QString, cv::Mat> &map, const int &cnt)
+void ProcessThread::setConfig(const int &cnt, const QMap<QString, cv::Mat> &map, const QVector<cv::Point> &off)
 {
-    matrixMap = map;
     count = cnt;
-    // 输出单画布大小
-    expandedSize = cv::Size(WIDTH + EXPAND, HEIGHT + EXPAND);
+    matrixMap = map;
+    offsets = off;
 
-    // 给矩阵增加平移补偿，将图像向右下移动，使其在更大画布的中心
+    expandedSize = cv::Size(AppConfig::getInstance().width + EXPAND, AppConfig::getInstance().height + EXPAND);
+
+    cv::Size totolSize = cv::Size(AppConfig::getInstance().width + EXPAND + (cnt - 1) * AppConfig::getInstance().width * 0.5, AppConfig::getInstance().height + EXPAND);
+
+    totalCanvas = cv::Mat::zeros(totolSize, CV_8UC4);
+
     for (int i=0;i<count;i++) {
         if (matrixMap.contains(key[i])) {
-            matrixMap[key[i]].at<double>(0, 2) += EXPAND / 2;
-            matrixMap[key[i]].at<double>(1, 2) += EXPAND / 2;
+            // 给矩阵增加平移补偿，将图像向右下移动，使其在更大画布的中心
+            matrixMap[key[i]].at<double>(0, 2) += matrixOff[i].x;
+            matrixMap[key[i]].at<double>(1, 2) += matrixOff[i].y;
         }
+        // 初始化为黑色
         resultMat[i] = cv::Mat::zeros(expandedSize, CV_8UC4);
+        // 初始化覆盖顺序
         displayOrder.append(i);
     }
-    totalCanvas = cv::Mat::zeros(cv::Size(4000, 1500), CV_8UC4);
-
-
-
-
 }
 
-void ProcessThread::setOffset(const QVector<cv::Point> &off)
-{
-    offsets = off;
-}
+
+
+
+
 
 void ProcessThread::stop()
 {
@@ -82,7 +83,7 @@ void ProcessThread::newFrameMat(cv::Mat mat, int ID)
     QQueue<cv::Mat> &queue = matQueues[ID];
 
     // 限制队列的长度
-    while (queue.size() >= MAX_QUEUE_SIZE) {
+    while (queue.size() >= AppConfig::MAX_QUEUE_SIZE) {
         queue.dequeue();
     }
 
@@ -132,21 +133,47 @@ void ProcessThread::run()
                 cv::cuda::GpuMat gpuSrc, gpuDst;
                 gpuSrc.upload(mat);
 
-                // 2. 执行硬件加速变换
+                // 执行硬件加速变换
                 // 注意：matrixMap[key[i]] 建议也预先上传为 GpuMat 以提升效率
                 cv::cuda::warpPerspective(gpuSrc, gpuDst, matrixMap[key[i]], expandedSize, cv::INTER_LINEAR);
 
-                // 3. 将结果下载回 CPU 内存
+                // 将结果下载回 CPU 内存
                 gpuDst.download(resultMat[i]);
 
+                // 处理并发送原始图像
                 cv::Mat resizeMat;
-                cv::resize(mat, resizeMat, orginTargetSize, 0, 0, cv::INTER_NEAREST);
+                double aspectRatio = (double)mat.cols / (double)mat.rows;
 
-                // 转换颜色空间给 Qt 用 (OpenCV 默认是 BGR，Qt 是 RGB)
-                cv::Mat finalMat;
-                cv::cvtColor(resizeMat, finalMat, cv::COLOR_BGRA2RGBA);
+                // 1. 以宽度为基准计算目标高度
+                int targetW = orginTargetSize.width;
+                int targetH = static_cast<int>(targetW / aspectRatio); // 注意：高度 = 宽度 / 比例
 
-                emit newResultMatOri(finalMat.clone(), j);
+                // 2. 执行缩放
+                cv::resize(mat, resizeMat, cv::Size(targetW, targetH));
+
+                // 3. 创建黑色底板 (假设 orginTargetSize 是 16:9 或其它，颜色空间与 mat 一致)
+                // 使用 mat.type() 确保通道数（如 BGRA）一致
+                cv::Mat finalCanvas = cv::Mat::zeros(orginTargetSize.height, orginTargetSize.width, mat.type());
+
+                // 4. 计算粘贴位置 (垂直居中)
+                // 如果 targetH > orginTargetSize.height，说明高度超出了，需要做截断处理或调整逻辑
+                // 这里假设 orginTargetSize.height 足够放下 targetH
+                int yOffset = (orginTargetSize.height - targetH) / 2;
+
+                // 保护逻辑：防止计算出的 offset 为负数导致崩溃
+                if (yOffset < 0) yOffset = 0;
+                int copyHeight = std::min(targetH, orginTargetSize.height);
+
+                // 5. 将缩放后的图像贴到黑色底板的 ROI 区域
+                // cv::Rect(x, y, width, height)
+                cv::Rect roi(0, yOffset, targetW, copyHeight);
+                resizeMat(cv::Rect(0, 0, targetW, copyHeight)).copyTo(finalCanvas(roi));
+
+                // 6. 最后转换颜色空间给 Qt
+                cv::Mat qtReadyMat;
+                cv::cvtColor(finalCanvas, qtReadyMat, cv::COLOR_BGRA2RGBA);
+
+                emit newResultMatOri(qtReadyMat, i);
 
             }
             // 计算ROI并处理越界
@@ -175,7 +202,7 @@ void ProcessThread::run()
         }
         // 核心拦截：只有当确实提取到了新画面，或者强制需要刷新时，才发给主 UI
         if (hasNewData) {
-            // 在子线程提前做好 Resize，减轻主线程负担！
+            // 处理并发送拼接的图像
             cv::Mat resizeMat;
             cv::resize(totalCanvas, resizeMat, transformTargetSize, 0, 0, cv::INTER_NEAREST);
 
